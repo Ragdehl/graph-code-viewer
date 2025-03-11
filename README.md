@@ -1,68 +1,65 @@
-# Code Repository Graph Visualizer
+# Graph Code Viewer
 
-An interactive visualization tool that extracts and displays function relationships in code repositories as an interactive graph.
+A Python application that extracts and visualizes function and class relationships in code repositories.
 
 ## Features
 
-- Repository Analysis:
-  - Extracts folders, files, and functions
-  - Captures function metadata (docstrings, parameters, types)
-  - Maps relationships between functions
-  
-- Interactive Visualization:
-  - Color-coded nodes for folders, files, and functions
-  - Interactive filtering by node type and name
-  - Function metadata display on hover
-  - Input/output relationship filtering
-  - Extension-based file coloring
+- Extracts function and class metadata from code repositories
+- Analyzes relationships between functions, methods, and classes
+- Visualizes the code structure with an interactive graph
+- Supports filtering by node type and relationship direction
+- Provides detailed information about each code element
+
+## Supported Languages
+
+- Python
+- JavaScript/TypeScript
+- Java
+- C/C++
 
 ## Installation
 
-1. Clone this repository:
-```bash
-git clone <repository-url>
-cd code-graph-visualizer
-```
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/graph-code-viewer.git
+   cd graph-code-viewer
+   ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+2. Create a conda environment and activate it:
+   ```
+   conda create -n gcvenv python=3.9
+   conda activate gcvenv
+   ```
+
+3. Install the required dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
 
 ## Usage
 
-1. Run the main script with a repository path:
-```bash
-python main.py --repo-path /path/to/repository
+Run the application with:
+
+```
+python main.py --repo-path "path/to/your/repository"
 ```
 
-2. Access the interactive visualization at `http://localhost:8050`
-
-### Command Line Arguments
-
-- `--repo-path`: Path to the repository to analyze (required)
-- `--cache`: Enable caching of analysis results (default: True)
+Optional arguments:
+- `--cache`: Enable/disable caching (default: True)
 - `--workers`: Number of parallel workers for analysis (default: 4)
 - `--port`: Port for the visualization server (default: 8050)
 
+## How It Works
+
+1. **Repository Scanning**: Analyzes all supported files in the repository
+2. **Metadata Extraction**: Extracts function and class information
+3. **Relationship Analysis**: Identifies how functions and classes interact
+4. **Visualization**: Creates an interactive graph of the codebase structure
+
 ## Project Structure
 
-- `main.py`: Entry point and repository processing
-- `scraper.py`: Function relationship extraction using AST
-- `visualizer.py`: Interactive graph generation
-- `filters.py`: Node filtering functionality
-- `metadata.py`: Function metadata extraction
-- `requirements.txt`: Project dependencies
-
-## Visualization Controls
-
-- **Node Filtering**: Use the dropdown menus to filter by node type or name
-- **Relationship View**: Select nodes to view only their input/output relationships
-- **Metadata View**: Hover over function nodes to see detailed information
-- **Graph Navigation**: Zoom and pan using mouse controls
-
-## Performance
-
-- Parallel processing for large repositories
-- Caching of analysis results
-- Efficient graph rendering for large codebases 
+- `main.py`: Entry point for the application
+- `metadata.py`: Handles code metadata extraction
+- `scraper.py`: Manages repository scanning and relationship analysis
+- `filters.py`: Provides filtering capabilities for the visualization
+- `visualizer.py`: Creates the interactive graph visualization 
