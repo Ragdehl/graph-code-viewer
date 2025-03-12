@@ -63,7 +63,7 @@ class GraphVisualizer:
                 },
                 'classes': 'file'
             })
-            # Connect file to folder
+            # Connect folder to file (corrected direction)
             edges.append({
                 'data': {
                     'source': f"folder:{info['folder']}",
@@ -88,7 +88,7 @@ class GraphVisualizer:
                 },
                 'classes': 'class'
             })
-            # Connect class to file
+            # Connect file to class (corrected direction)
             edges.append({
                 'data': {
                     'source': f"file:{cls.file_path}",
@@ -97,9 +97,25 @@ class GraphVisualizer:
                 }
             })
             
-            # Connect methods to class
+            # Connect class to methods (corrected direction)
             for method in cls.methods:
                 method_id = f"{method.file_path}:{method.name}"
+                nodes.append({
+                    'data': {
+                        'id': method_id,
+                        'label': method.name,
+                        'type': 'method',
+                        'color': file_colors[method.file_path],
+                        'metadata': {
+                            'docstring': method.docstring,
+                            'parameters': method.parameters,
+                            'returns': method.returns,
+                            'file_path': method.file_path,
+                            'line_number': method.line_number
+                        }
+                    },
+                    'classes': 'method'
+                })
                 edges.append({
                     'data': {
                         'source': cls_id,
@@ -108,7 +124,7 @@ class GraphVisualizer:
                     }
                 })
         
-        # Add function nodes
+        # Add function nodes (standalone functions not in classes)
         for func in self.functions:
             func_id = f"{func.file_path}:{func.name}"
             nodes.append({
@@ -127,7 +143,7 @@ class GraphVisualizer:
                 },
                 'classes': 'function'
             })
-            # Connect function to file
+            # Connect file to function (corrected direction)
             edges.append({
                 'data': {
                     'source': f"file:{func.file_path}",
@@ -135,55 +151,63 @@ class GraphVisualizer:
                     'type': 'contains'
                 }
             })
-            
-        # Add relationship edges
+        
+        # Function call relationships (keep the original direction)
         for func_id, rels in self.relationships.items():
-            # Add function call relationships
-            for called_func in rels.get('calls', set()):
-                edges.append({
-                    'data': {
-                        'source': func_id,
-                        'target': called_func,
-                        'type': 'calls'
-                    },
-                    'classes': 'relationship'
-                })
+            source_file = func_id.split(':')[0]
             
-            # Add class usage relationships
+            for called_func in rels.get('calls', set()):
+                target_file = called_func.split(':')[0]
+                
+                # Only add the edge if the source and target are in the same file
+                if source_file == target_file:
+                    edges.append({
+                        'data': {
+                            'source': func_id,
+                            'target': called_func,
+                            'type': 'calls'
+                        },
+                        'classes': 'relationship'
+                    })
+            
+            # Class usage relationships
             for used_class in rels.get('uses', set()):
-                edges.append({
-                    'data': {
-                        'source': func_id,
-                        'target': used_class,
-                        'type': 'uses'
-                    },
-                    'classes': 'uses-relationship'
-                })
+                class_file = used_class.split(':')[0]
+                
+                # Only add the edge if in the same file
+                if source_file == class_file:
+                    edges.append({
+                        'data': {
+                            'source': func_id,
+                            'target': used_class,
+                            'type': 'uses'
+                        },
+                        'classes': 'uses-relationship'
+                    })
         
         return nodes, edges
 
-    def _get_searchable_items(self):
-        """Get list of searchable items for autocomplete."""
+    def _get_folder_file_items(self):
+        """Get list of folders and files for multiselection."""
         items = []
-        # Add functions
-        for func in self.functions:
-            items.append({
-                'label': f"Function: {func.name}",
-                'value': f"{func.file_path}:{func.name}"
-            })
-        # Add files
-        for file_path in self.file_info:
-            items.append({
-                'label': f"File: {file_path.split('/')[-1]}",
-                'value': f"file:{file_path}"
-            })
+        
         # Add folders
         folders = set(info['folder'] for info in self.file_info.values())
         for folder in folders:
+            folder_name = folder.split('\\')[-1] if '\\' in folder else folder.split('/')[-1]
             items.append({
-                'label': f"Folder: {folder.split('/')[-1]}",
+                'label': f"📁 {folder_name}",
                 'value': f"folder:{folder}"
             })
+        
+        # Add files
+        for file_path in self.file_info:
+            file_name = file_path.split('\\')[-1] if '\\' in file_path else file_path.split('/')[-1]
+            items.append({
+                'label': f"📄 {file_name}",
+                'value': f"file:{file_path}"
+            })
+        
         return items
 
     def _create_app(self) -> dash.Dash:
@@ -191,7 +215,7 @@ class GraphVisualizer:
         app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
         
         nodes, edges = self._create_nodes_and_edges()
-        searchable_items = self._get_searchable_items()
+        folder_file_items = self._get_folder_file_items()
         
         app.layout = dbc.Container([
             html.H1("Code Repository Graph Viewer", className="my-4"),
@@ -200,44 +224,17 @@ class GraphVisualizer:
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H4("Filters"),
-                            dbc.Form([
-                                dbc.Label("Node Type"),
-                                dcc.Dropdown(
-                                    id='node-type-filter',
-                                    options=[
-                                        {'label': 'All', 'value': 'all'},
-                                        {'label': 'Folders', 'value': 'folder'},
-                                        {'label': 'Files', 'value': 'file'},
-                                        {'label': 'Functions', 'value': 'function'},
-                                        {'label': 'Classes', 'value': 'class'}
-                                    ],
-                                    value='all',
-                                    clearable=False
-                                ),
-                                html.Br(),
-                                dbc.Label("Search"),
-                                dcc.Dropdown(
-                                    id='search-filter',
-                                    options=searchable_items,
-                                    value=None,
-                                    clearable=True,
-                                    searchable=True,
-                                    placeholder="Type to search..."
-                                ),
-                                html.Br(),
-                                dbc.Label("Relationship Direction"),
-                                dcc.Dropdown(
-                                    id='relationship-direction',
-                                    options=[
-                                        {'label': 'Both', 'value': 'both'},
-                                        {'label': 'Incoming', 'value': 'in'},
-                                        {'label': 'Outgoing', 'value': 'out'}
-                                    ],
-                                    value='both',
-                                    clearable=False
-                                )
-                            ])
+                            html.H4("File Explorer"),
+                            html.P("Select folders and files to display:"),
+                            dcc.Dropdown(
+                                id='folder-file-selector',
+                                options=folder_file_items,
+                                value=[],  # Default to empty selection
+                                multi=True,  # Enable multi-selection
+                                clearable=True,
+                                searchable=True,
+                                placeholder="Select folders and files..."
+                            )
                         ])
                     ], className="mb-4"),
                     
@@ -253,7 +250,7 @@ class GraphVisualizer:
                     cyto.Cytoscape(
                         id='graph',
                         layout={
-                            'name': 'cose',  # Using simpler cose layout
+                            'name': 'cose',
                             'padding': 50,
                             'nodeOverlap': 20,
                             'componentSpacing': 100,
@@ -304,6 +301,17 @@ class GraphVisualizer:
                                     'shape': 'ellipse',
                                     'width': '25px',
                                     'height': '25px'
+                                }
+                            },
+                            {
+                                'selector': '.method',
+                                'style': {
+                                    'background-color': 'data(color)',
+                                    'shape': 'ellipse',
+                                    'width': '20px',
+                                    'height': '20px',
+                                    'border-width': '1px',
+                                    'border-color': '#000'
                                 }
                             },
                             {
@@ -371,7 +379,9 @@ class GraphVisualizer:
                         zoomingEnabled=True,
                         minZoom=0.1,
                         maxZoom=2.0,
-                        zoom=1.0
+                        zoom=1.0,
+                        boxSelectionEnabled=True,
+                        autounselectify=False
                     )
                 ], width=9)
             ])
@@ -384,88 +394,67 @@ class GraphVisualizer:
         """Set up the interactive callbacks."""
         
         @app.callback(
-            [Output('graph', 'elements'),
-             Output('search-filter', 'options')],
-            [Input('node-type-filter', 'value'),
-             Input('search-filter', 'value'),
-             Input('relationship-direction', 'value'),
-             Input('search-filter', 'search_value')],
-            [State('graph', 'selectedNodeData')]
+            Output('graph', 'elements'),
+            [Input('folder-file-selector', 'value')]
         )
-        def update_graph(node_type, search_value, direction, search_input, selected_nodes):
-            ctx = dash.callback_context
-            if not ctx.triggered:
-                return dash.no_update, dash.no_update
-
-            # Update search options if search input changed
-            if ctx.triggered[0]['prop_id'] == 'search-filter.search_value':
-                if not search_input:
-                    return dash.no_update, self._get_searchable_items()
-                filtered_items = [
-                    item for item in self._get_searchable_items()
-                    if search_input.lower() in item['label'].lower()
-                ]
-                return dash.no_update, filtered_items
-
+        def update_graph(selected_items):
             try:
-                selected_ids = [node['id'] for node in (selected_nodes or [])]
-                
-                # Convert node type 'all' to None for filter
-                node_type = None if node_type == 'all' else node_type
-                
                 # Get all nodes and edges
-                nodes, edges = self._create_nodes_and_edges()
-                all_elements = nodes + edges
+                all_nodes, all_edges = self._create_nodes_and_edges()
                 
-                # Apply filters if any are active
-                if node_type or search_value or selected_ids:
-                    # Get node IDs to keep
-                    keep_nodes = set()
-                    
-                    # Filter by type
-                    if node_type:
-                        keep_nodes.update(n['data']['id'] for n in nodes if n['data'].get('type') == node_type)
-                    else:
-                        keep_nodes.update(n['data']['id'] for n in nodes)
-                    
-                    # Filter by search value
-                    if search_value:
-                        keep_nodes = {n for n in keep_nodes if search_value in n}
-                    
-                    # Filter by selected nodes and relationships
-                    if selected_ids:
-                        related_nodes = set(selected_ids)
-                        
-                        # Add related nodes based on direction
-                        for edge in edges:
-                            if edge['data']['type'] == 'calls':
-                                source = edge['data']['source']
-                                target = edge['data']['target']
-                                
-                                if source in selected_ids and direction in ['both', 'out']:
-                                    related_nodes.add(target)
-                                if target in selected_ids and direction in ['both', 'in']:
-                                    related_nodes.add(source)
-                        
-                        keep_nodes = keep_nodes.intersection(related_nodes)
-                    
-                    # Keep only filtered nodes and their edges
-                    filtered_nodes = [n for n in nodes if n['data']['id'] in keep_nodes]
-                    filtered_edges = [e for e in edges if 
-                                     (e['data']['source'] in keep_nodes and e['data']['target'] in keep_nodes)]
-                    
-                    # Highlight related edges
-                    for edge in filtered_edges:
-                        if edge['data']['type'] == 'calls':
-                            edge['classes'] = 'relationship highlighted'
-                    
-                    all_elements = filtered_nodes + filtered_edges
+                # If no selections, show everything
+                if not selected_items:
+                    return all_nodes + all_edges
                 
-                return all_elements, dash.no_update
+                # Separate selected folders and files
+                selected_folders = [item for item in selected_items if item.startswith('folder:')]
+                selected_files = [item for item in selected_items if item.startswith('file:')]
+                
+                # Keep track of nodes to display
+                keep_nodes = set()
+                
+                # Always include the selected folders and files
+                keep_nodes.update(selected_folders)
+                keep_nodes.update(selected_files)
+                
+                # For each selected folder, add all its contained files
+                for edge in all_edges:
+                    if edge['data']['type'] == 'contains' and edge['data']['source'] in selected_folders:
+                        keep_nodes.add(edge['data']['target'])
+                
+                # For each selected file, add all its contained classes and functions
+                file_content_nodes = set()
+                processed_files = set(selected_files)
+                
+                # Recursively process the hierarchy
+                while processed_files:
+                    current_file = processed_files.pop()
+                    
+                    # Find all nodes contained in this file
+                    for edge in all_edges:
+                        if edge['data']['source'] == current_file and edge['data']['type'] == 'contains':
+                            target = edge['data']['target']
+                            file_content_nodes.add(target)
+                            
+                            # If target is a class, also add its methods
+                            for class_edge in all_edges:
+                                if class_edge['data']['source'] == target and class_edge['data']['type'] == 'contains':
+                                    file_content_nodes.add(class_edge['data']['target'])
+                
+                # Add all content nodes to our keep set
+                keep_nodes.update(file_content_nodes)
+                
+                # Filter nodes and edges
+                filtered_nodes = [n for n in all_nodes if n['data']['id'] in keep_nodes]
+                filtered_edges = [e for e in all_edges if 
+                                (e['data']['source'] in keep_nodes and e['data']['target'] in keep_nodes)]
+                
+                return filtered_nodes + filtered_edges
+                
             except Exception as e:
                 print(f"Error in update_graph: {str(e)}")
-                return dash.no_update, dash.no_update
-            
+                return dash.no_update
+        
         @app.callback(
             Output('node-details', 'children'),
             [Input('graph', 'tapNodeData')]
@@ -473,12 +462,13 @@ class GraphVisualizer:
         def display_node_data(node_data):
             if not node_data:
                 return "Click a node to see details"
-                
+            
             try:
-                if node_data['type'] == 'function':
+                if node_data['type'] == 'function' or node_data['type'] == 'method':
                     metadata = node_data['metadata']
                     return html.Div([
                         html.H5(node_data['label']),
+                        html.P(f"Type: {node_data['type'].capitalize()}"),
                         html.P(f"File: {metadata['file_path']}"),
                         html.P(f"Line: {metadata['line_number']}"),
                         html.H6("Docstring:"),
@@ -495,6 +485,7 @@ class GraphVisualizer:
                     metadata = node_data['metadata']
                     return html.Div([
                         html.H5(node_data['label']),
+                        html.P(f"Type: Class"),
                         html.P(f"File: {metadata['file_path']}"),
                         html.H6("Docstring:"),
                         html.P(metadata['docstring'] or "No docstring")

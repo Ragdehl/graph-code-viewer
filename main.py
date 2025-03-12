@@ -56,7 +56,8 @@ def load_cache(repo_path: str) -> tuple:
                     parameters=f['parameters'],
                     returns=f['returns'],
                     line_number=f['line_number'],
-                    called_functions=f['called_functions']
+                    called_functions=f['called_functions'],
+                    used_classes=f['used_classes']
                 )
                 for f in cache['functions']
             ]
@@ -79,7 +80,8 @@ def load_cache(repo_path: str) -> tuple:
                             parameters=m['parameters'],
                             returns=m['returns'],
                             line_number=m['line_number'],
-                            called_functions=m['called_functions']
+                            called_functions=m['called_functions'],
+                            used_classes=m['used_classes']
                         )
                         for m in c['methods']
                     ]
@@ -87,7 +89,14 @@ def load_cache(repo_path: str) -> tuple:
                 for c in cache['classes']
             ]
             
-            return functions, classes, cache['file_info'], cache['relationships']
+            # Convert relationship lists back to sets
+            relationships = {}
+            for func_id, rel_dict in cache['relationships'].items():
+                relationships[func_id] = {
+                    rel_type: set(rel_list) for rel_type, rel_list in rel_dict.items()
+                }
+            
+            return functions, classes, cache['file_info'], relationships
     except (json.JSONDecodeError, KeyError, FileNotFoundError) as e:
         print(f"Cache loading failed: {str(e)}")
     return None, None, None, None
@@ -107,7 +116,8 @@ def save_cache(repo_path: str, functions: list, classes: list, file_info: dict, 
             'parameters': f.parameters,
             'returns': f.returns,
             'line_number': f.line_number,
-            'called_functions': f.called_functions
+            'called_functions': f.called_functions,
+            'used_classes': f.used_classes
         }
         for f in functions
     ]
@@ -130,7 +140,8 @@ def save_cache(repo_path: str, functions: list, classes: list, file_info: dict, 
                     'parameters': m.parameters,
                     'returns': m.returns,
                     'line_number': m.line_number,
-                    'called_functions': m.called_functions
+                    'called_functions': m.called_functions,
+                    'used_classes': m.used_classes
                 }
                 for m in c.methods
             ]
@@ -138,11 +149,18 @@ def save_cache(repo_path: str, functions: list, classes: list, file_info: dict, 
         for c in classes
     ]
     
+    # Convert sets to lists in relationships
+    serializable_relationships = {}
+    for func_id, rel_dict in relationships.items():
+        serializable_relationships[func_id] = {
+            rel_type: list(rel_set) for rel_type, rel_set in rel_dict.items()
+        }
+    
     cache = {
         'functions': functions_dict,
         'classes': classes_dict,
         'file_info': file_info,
-        'relationships': relationships
+        'relationships': serializable_relationships
     }
     
     try:
