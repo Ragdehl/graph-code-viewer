@@ -39,6 +39,9 @@ class GraphVisualizer:
         file_colors = {file_path: get_file_color(file_path) 
                       for file_path in self.file_info.keys()}
         
+        # Keep track of methods that belong to classes
+        methods_in_classes = set()
+        
         # Add folder nodes
         folders = set(info['folder'] for info in self.file_info.values())
         for folder in folders:
@@ -63,7 +66,7 @@ class GraphVisualizer:
                 },
                 'classes': 'file'
             })
-            # Connect folder to file (corrected direction)
+            # Connect folder to file
             edges.append({
                 'data': {
                     'source': f"folder:{info['folder']}",
@@ -72,7 +75,7 @@ class GraphVisualizer:
                 }
             })
             
-        # Add class nodes
+        # Add class nodes and their methods
         for cls in self.classes:
             cls_id = f"{cls.file_path}:{cls.name}"
             nodes.append({
@@ -88,7 +91,7 @@ class GraphVisualizer:
                 },
                 'classes': 'class'
             })
-            # Connect file to class (corrected direction)
+            # Connect file to class
             edges.append({
                 'data': {
                     'source': f"file:{cls.file_path}",
@@ -97,9 +100,12 @@ class GraphVisualizer:
                 }
             })
             
-            # Connect class to methods (corrected direction)
+            # Connect class to its methods
             for method in cls.methods:
                 method_id = f"{method.file_path}:{method.name}"
+                # Track this method as belonging to a class
+                methods_in_classes.add(method_id)
+                
                 nodes.append({
                     'data': {
                         'id': method_id,
@@ -116,6 +122,7 @@ class GraphVisualizer:
                     },
                     'classes': 'method'
                 })
+                # Connect method to its class (not to the file)
                 edges.append({
                     'data': {
                         'source': cls_id,
@@ -124,9 +131,13 @@ class GraphVisualizer:
                     }
                 })
         
-        # Add function nodes (standalone functions not in classes)
+        # Add standalone function nodes (functions not in classes)
         for func in self.functions:
             func_id = f"{func.file_path}:{func.name}"
+            # Skip functions that are already added as methods
+            if func_id in methods_in_classes:
+                continue
+            
             nodes.append({
                 'data': {
                     'id': func_id,
@@ -143,7 +154,7 @@ class GraphVisualizer:
                 },
                 'classes': 'function'
             })
-            # Connect file to function (corrected direction)
+            # Connect function to file
             edges.append({
                 'data': {
                     'source': f"file:{func.file_path}",
@@ -152,7 +163,7 @@ class GraphVisualizer:
                 }
             })
         
-        # Function call relationships (keep the original direction)
+        # Add relationship edges (calls between functions/methods)
         for func_id, rels in self.relationships.items():
             source_file = func_id.split(':')[0]
             
@@ -170,7 +181,7 @@ class GraphVisualizer:
                         'classes': 'relationship'
                     })
             
-            # Class usage relationships
+            # Add class usage relationships
             for used_class in rels.get('uses', set()):
                 class_file = used_class.split(':')[0]
                 
@@ -371,6 +382,16 @@ class GraphVisualizer:
                                     'border-width': 3,
                                     'border-color': '#333'
                                 }
+                            },
+                            {
+                                'selector': '.cross-file-highlight',
+                                'style': {
+                                    'line-color': '#ff5722',  # Bright orange for cross-file connections
+                                    'target-arrow-color': '#ff5722',
+                                    'width': 3,
+                                    'opacity': 1,
+                                    'z-index': 10  # Make sure these connections are on top
+                                }
                             }
                         ],
                         # Add zoom and pan settings
@@ -444,10 +465,74 @@ class GraphVisualizer:
                 # Add all content nodes to our keep set
                 keep_nodes.update(file_content_nodes)
                 
+                # Special case: if only one file is selected, show its cross-file connections
+                if len(selected_files) == 1 and not selected_folders:
+                    # Get all nodes from the selected file
+                    file_nodes = set()
+                    for node in file_content_nodes:
+                        file_nodes.add(node)
+                        
+                    # Add nodes from other files that are connected to our file's nodes
+                    connected_nodes = set()
+                    for edge in all_edges:
+                        # For 'calls' or 'uses' relationships
+                        if edge['data']['type'] in ['calls', 'uses']:
+                            source = edge['data']['source']
+                            target = edge['data']['target']
+                            
+                            # If source is in our file and target is in another file
+                            if source in file_nodes and target not in file_nodes:
+                                connected_nodes.add(target)
+                                
+                            # If target is in our file and source is in another file
+                            elif target in file_nodes and source not in file_nodes:
+                                connected_nodes.add(source)
+                    
+                    # For nodes from other files, add their parent nodes to show context
+                    context_nodes = set()
+                    for node_id in connected_nodes:
+                        # Find parent nodes (files or classes)
+                        for edge in all_edges:
+                            if edge['data']['type'] == 'contains' and edge['data']['target'] == node_id:
+                                parent_id = edge['data']['source']
+                                context_nodes.add(parent_id)
+                                
+                                # If parent is a class, also add its file
+                                if not parent_id.startswith('file:'):
+                                    for edge2 in all_edges:
+                                        if edge2['data']['type'] == 'contains' and edge2['data']['target'] == parent_id:
+                                            context_nodes.add(edge2['data']['source'])
+                    
+                    # Add all connected and context nodes to our keep set
+                    keep_nodes.update(connected_nodes)
+                    keep_nodes.update(context_nodes)
+                
                 # Filter nodes and edges
                 filtered_nodes = [n for n in all_nodes if n['data']['id'] in keep_nodes]
-                filtered_edges = [e for e in all_edges if 
-                                (e['data']['source'] in keep_nodes and e['data']['target'] in keep_nodes)]
+                
+                # For edges, only keep those where both source and target are in our filtered nodes
+                filtered_edges = []
+                for edge in all_edges:
+                    source = edge['data']['source']
+                    target = edge['data']['target']
+                    
+                    if source in keep_nodes and target in keep_nodes:
+                        # If this is a cross-file connection in single-file mode, highlight it
+                        if len(selected_files) == 1 and not selected_folders:
+                            if edge['data']['type'] in ['calls', 'uses']:
+                                source_file = source.split(':')[0] if ':' in source else ''
+                                target_file = target.split(':')[0] if ':' in target else ''
+                                
+                                # If source and target are in different files
+                                if source_file != target_file:
+                                    # Clone the edge and add highlighting
+                                    highlighted_edge = edge.copy()
+                                    highlighted_edge['classes'] = edge.get('classes', '') + ' cross-file-highlight'
+                                    filtered_edges.append(highlighted_edge)
+                                    continue
+                        
+                        # Add regular edge
+                        filtered_edges.append(edge)
                 
                 return filtered_nodes + filtered_edges
                 
